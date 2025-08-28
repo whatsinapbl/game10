@@ -1,0 +1,9 @@
+
+.windows {
+    --monaco-monospace-font: "Fira Code" !important;
+    font-family: "Inter" !important;
+}
+
+.shadow-root-host {
+    font-family: "Inter" !important;
+}

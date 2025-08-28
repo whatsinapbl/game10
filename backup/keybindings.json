@@ -1,0 +1,89 @@
+[
+    {
+        "key": "f5",
+        "command": "ahk++.run",
+        "when": "editorLangId == 'ahk2'"
+    },
+    {
+        "key": "f5",
+        "command": "rust-analyzer.debug",
+        "when": "editorLangId == 'rust'"
+    },
+    {
+        "key": "`",
+        "command": "editor.toggleFold",
+        "when": "editorTextFocus && vim.mode != 'Insert'"
+    },
+    {
+        "key": "alt+a",
+        "command": "editor.action.replaceAll",
+    },
+    {
+        "key": "f5",
+        "command": "python.debugInTerminal",
+        "when": "editorLangId == 'python'"
+    },
+    {
+        "key": "alt+o",
+        "command": "workbench.action.gotoSymbol"
+    },
+    {
+        "key": "f5",
+        "command": "cmake.debugTarget",
+        "when": "editorLangId == 'cpp' || editorLangId == 'cmake' || editorLangId == 'slang'"
+    },
+    {
+        "key": "f9",
+        "command": "runCommands",
+        "args": {
+            "commands": [
+                "workbench.debug.viewlet.action.removeAllBreakpoints",
+                "editor.debug.action.toggleBreakpoint"
+            ]
+        }
+    },
+    {
+        "key": "ctrl+l",
+        "command": "editor.foldAll"
+    },
+    {
+        "key": "ctrl+shift+/",
+        "command": "editor.action.blockComment"
+    },
+    {
+        "key": "ctrl+'",
+        "command": "extension.googleSearch"
+    },
+    {
+        "key": "alt+o",
+        "command": "workbench.action.gotoSymbol"
+    },
+    {
+        "key": "alt+p",
+        "command": "workbench.action.showCommands"
+    },
+    {
+        "key": "escape",
+        "command": "runCommands",
+        "args": {
+            "commands": [
+                "closeFindWidget",
+                "cancelSelection",
+                "extension.vim_escape"
+            ]
+        },
+        "when": "findWidgetVisible"
+    },
+    {
+        "key": "ctrl+=",
+        "command": "workbench.action.navigateForward"
+    },
+    {
+        "key": "ctrl+-",
+        "command": "workbench.action.navigateBack"
+    },
+    {
+        "key": "ctrl+\\",
+        "command": "workbench.action.reloadWindow"
+    },
+]

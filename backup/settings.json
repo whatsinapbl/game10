@@ -1,0 +1,325 @@
+{
+   // "[cpp]": {
+   //   "editor.formatOnSave": false,
+   // },
+   "cmake.debugConfig": {
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+   },
+   "debug.console.fontFamily": "Fira Code",
+   // "debug.internalConsoleOptions": "openOnSessionStart",
+   "cmake.configureArgs": ["-Wno-dev"],
+   "maptz.regionfolder": {
+      "[cpp]": {
+         "foldEndRegex": "// #endregion",
+         "foldStartRegex": "// #region"
+      }
+   },
+   // "editor.foldingStrategy": "indentation",
+   "debug.inlineValues": "on",
+   "terminal.integrated.smoothScrolling": true,
+   "git.postCommitCommand": "push",
+   "C_Cpp.autoAddFileAssociations": false,
+   "editor.tabSize": 3,
+   "explorer.sortOrder": "type",
+   "explorer.compactFolders": false,
+   "window.restoreWindows": "none",
+   "editor.guides.indentation": false,
+   "editor.fontFamily": "Fira Code",
+   "editor.fontLigatures": "'ss02', 'ss03', 'ss05'",
+   "editor.formatOnSave": false,
+   "files.autoSave": "afterDelay",
+   "editor.smoothScrolling": true,
+   "editor.cursorSmoothCaretAnimation": "on",
+   "workbench.iconTheme": "material-icon-theme",
+   "security.workspace.trust.untrustedFiles": "open",
+   "vim.easymotion": true,
+   "vim.foldfix": true,
+   "editor.snippetSuggestions": "top",
+   "editor.suggest.showSnippets": true,
+   "vim.normalModeKeyBindingsNonRecursive": [
+      {
+         "after": ["%"],
+         "before": ["e"]
+      },
+      {
+         "after": ["3", "j"],
+         "before": ["J"]
+      },
+      {
+         "after": ["3", "k"],
+         "before": ["K"]
+      },
+      {
+         "after": ["3", "h"],
+         "before": ["H"]
+      },
+      {
+         "after": ["3", "l"],
+         "before": ["L"]
+      },
+      {
+         "after": ["^"],
+         "before": ["n"]
+      },
+      {
+         "after": ["$"],
+         "before": ["m"]
+      },
+      {
+         "after": ["v", "i"],
+         "before": ["s"]
+      },
+      {
+         "after": ["\\", "\\", "s"],
+         "before": ["<space>"]
+      },
+      {
+         "after": ["<C-v>"],
+         "before": ["q"]
+      },
+      {
+         "after": ["J"],
+         "before": ["z"]
+      }
+   ],
+   "vim.operatorPendingModeKeyBindingsNonRecursive": [
+      {
+         "after": ["%"],
+         "before": ["e"]
+      },
+      {
+         "after": ["3", "j"],
+         "before": ["J"]
+      },
+      {
+         "after": ["3", "k"],
+         "before": ["K"]
+      },
+      {
+         "after": ["^"],
+         "before": ["n"]
+      },
+      {
+         "after": ["$"],
+         "before": ["m"]
+      },
+      {
+         "after": ["v", "i"],
+         "before": ["s"]
+      },
+      {
+         "after": ["\\", "\\", "s"],
+         "before": ["<space>"]
+      },
+      {
+         "after": ["<C-v>"],
+         "before": ["q"]
+      },
+      {
+         "after": ["J"],
+         "before": ["z"]
+      }
+   ],
+   "vim.useCtrlKeys": false,
+   "vim.useSystemClipboard": true,
+   "vim.visualModeKeyBindingsNonRecursive": [
+      {
+         "after": ["%"],
+         "before": ["e"]
+      },
+      {
+         "after": ["3", "j"],
+         "before": ["J"]
+      },
+      {
+         "after": ["3", "k"],
+         "before": ["K"]
+      },
+      {
+         "after": ["3", "h"],
+         "before": ["H"]
+      },
+      {
+         "after": ["3", "l"],
+         "before": ["L"]
+      },
+      {
+         "after": ["^"],
+         "before": ["n"]
+      },
+      {
+         "after": ["$"],
+         "before": ["m"]
+      },
+      {
+         "after": ["v", "i"],
+         "before": ["s"]
+      },
+      {
+         "after": ["\\", "\\", "s"],
+         "before": ["<space>"]
+      },
+      {
+         "after": ["<C-v>"],
+         "before": ["q"]
+      },
+      {
+         "after": ["J"],
+         "before": ["z"]
+      }
+   ],
+   "python.analysis.diagnosticSeverityOverrides": {
+      "reportUndefinedVariable": "none"
+   },
+   "update.mode": "none",
+   "extensions.autoUpdate": false,
+   "editor.semanticTokenColorCustomizations": {
+      "enabled": true,
+      "rules": {
+         "namespace": "#569cd6",
+         "templateType": "#569cd6",
+         "type": "#569cd6",
+         "class": "#569cd6"
+         // "memberOperatorOverload": "#cccccc"
+      }
+   },
+   "editor.tokenColorCustomizations": {
+      "textMateRules": [
+         {
+            "scope": "entity.name.type.parameter.cpp",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "support.type.namespace.slang",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "support.type.hlsl.slang",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "keyword.sv",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "type.sv",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "entity.name.type.template.cpp",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         },
+         {
+            "scope": "entity.name.type.cpp",
+            "settings": {
+               "foreground": "#569CD6"
+            }
+         }
+      ]
+   },
+   "prettier.tabWidth": 3,
+   "workbench.tree.indent": 16,
+   "editor.bracketPairColorization.enabled": true,
+   "workbench.activityBar.location": "top",
+   "workbench.colorCustomizations": {
+      "debugConsole.infoForeground": "#cccccc"
+   },
+   "workbench.list.smoothScrolling": true,
+   "editor.mouseWheelScrollSensitivity": 1.3,
+   "extensions.ignoreRecommendations": true,
+   "vscode_custom_css.imports": ["file:///C:/Users/pbl/Documents/custom.css"],
+   "AHK++.v2.formatter": {
+      "indentBetweenHotIfDirectives": true
+   },
+   "gitlens.codeLens.enabled": false,
+   "editor.occurrencesHighlight": "off",
+   "editor.find.autoFindInSelection": "multiline",
+   "C_Cpp.copilotHover": "disabled",
+   // "C_Cpp.formatting": "vcFormat",
+   "C_Cpp.vcFormat.indent.caseLabels": true,
+   "C_Cpp.vcFormat.space.withinInitializerListBraces": false,
+   // "slang.predefinedMacros": [
+   // "vec=StructuredBuffer",
+   // "u32=uint",
+   // "tex=Texture2D",
+   // "samp=SamplerState",
+   // ],
+   "debugpy.debugJustMyCode": false,
+   // https://pypi.org/project/autopep8/
+   "autopep8.args": [
+      "--ignore=E301,E302",
+      "--indent-size=3",
+      "--max-line-length=200"
+   ],
+
+   "explorer.confirmDelete": false,
+   // "editor.rulers": [120],
+   // "[slang]": {
+   //   "editor.formatOnSave": false,
+   //   "editor.formatOnType": false,
+   //   "editor.formatOnPaste": false
+   // },
+   "terminal.integrated.mouseWheelScrollSensitivity": 1.25,
+   "explorer.confirmDragAndDrop": false,
+   "files.associations": {
+      "*.sage": "python",
+      "*.hlsl": "slang",
+      ".clang-format": "yaml",
+      "*.asm": "dxbc"
+   },
+   "material-icon-theme.files.associations": {
+      "*.slang": "shader",
+      "*.pbl": "shader"
+   },
+   "git.autofetch": true,
+   "git.enableSmartCommit": true,
+   "explorer.confirmPasteNative": false,
+   "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      "__pycache__": true
+   },
+   "C_Cpp.vcFormat.newLine.beforeOpenBrace.function": "newLine",
+   "C_Cpp.vcFormat.newLine.beforeOpenBrace.block": "newLine",
+   "github.copilot.enable": {
+      "*": false,
+      "plaintext": false,
+      "markdown": false,
+      "scminput": false,
+      "cpp": false,
+      "python": false,
+      "cmake": false
+   },
+   "cmake.options.statusBarVisibility": "compact",
+   "workbench.editorAssociations": {
+      "*.copilotmd": "vscode.markdown.preview.editor",
+      "{hexdiff}:/**/*.*": "hexEditor.hexedit",
+      "*.tex": "hexEditor.hexedit"
+   },
+   "editor.lineHeight": 1.5,
+   // "gitlens.currentLine.enabled": false,
+   "terminal.integrated.enableMultiLinePasteWarning": "never",
+   "[python]": {
+      "editor.tabSize": 3
+   },
+   "[jsonc]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+   }
+   // "python.analysis.typeCheckingMode": "standard",
+}

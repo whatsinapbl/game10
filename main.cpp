@@ -316,22 +316,22 @@ int main()
       setVertexConstants(0, {model, view, proj});
       setDepthState(dsGreater);
 
+      model = {
+          1, 0, 0, 0,
+          0, 1, 0, 0,
+          0, 0, 1, 0,
+          0, 0, 0, 1};
+
       setVertexShader(vsTriangle);
       setPixelShader(psTriangle);
       draw(3);
 
-      // setVertexShader(vsMain);
-      // setPixelShader(psMain);
+      //   setVertexShader(vsMain);
+      //   setPixelShader(psMain);
 
-      // model = {
-      //     1, 0, 0, 0,
-      //     0, 1, 0, 0,
-      //     0, 0, 1, 0,
-      //     0, 0, 0, 1};
-
-      // setVertexResources(0, {player.points});
-      // setIndexBuffer(player.indices);
-      // drawIndexed(player.count);
+      //   setVertexResources(0, {player.points});
+      //   setIndexBuffer(player.indices);
+      //   drawIndexed(player.count);
 
       // spriteBatch.Begin();
       // spriteFont.DrawString(&spriteBatch, L"Hello, world!", Vector2(100, 100));

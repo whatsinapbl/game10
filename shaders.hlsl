@@ -10,8 +10,12 @@ typedef float4x4 mat4;
 #define pi 3.14159265359
 
 vec4 operator*(mat4 m, vec4 v) { return mul(m, v); }
+mat4 operator*(mat4 a, mat4 b) { return mul(a, b); }
 
 void vsTriangle(uint id: SV_VertexID,
+                cb<mat4> model,
+                cb<mat4> view,
+                cb<mat4> proj,
                 out vec4 svp: SV_Position,
                 out vec3 color: color)
 {
@@ -25,7 +29,7 @@ void vsTriangle(uint id: SV_VertexID,
       { 0, 1, 0 },
       { 0, 0, 1 }
    };
-   svp = vec4(points[id], 0.5, 1);
+   svp = proj * model * vec4(points[id], 1, 1);
    color = colors[id];
 }
 

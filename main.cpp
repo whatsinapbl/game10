@@ -5,14 +5,21 @@ bool dragging;
 
 struct
 {
-   vec3 pos;
+   vec3 pos = {0, 0, -5};
    float yaw;
    float pitch;
    float armLength;
    float fov = 103 * pi / 180;
    float near = 0.1;
    float sens = 0.003;
+   float speed = 5;
 } cam;
+
+struct
+{
+   float yaw = -pi / 6;
+   float pitch = pi / 3;
+} shadow;
 
 i64 callback(HWND hwnd, u32 msg, u64 wp, i64 lp)
 {
@@ -48,6 +55,9 @@ i64 callback(HWND hwnd, u32 msg, u64 wp, i64 lp)
          RAWINPUT raw;
          u32 size = sizeof(raw);
          GetRawInputData(HRAWINPUT(lp), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER));
+
+         //  note: +x is right, +y is down
+         //  println("{} {}", raw.data.mouse.lLastX, raw.data.mouse.lLastY);
          cam.pitch = clamp(cam.pitch + raw.data.mouse.lLastY * cam.sens, -pi / 2, pi / 2);
          cam.yaw = fmod(cam.yaw + raw.data.mouse.lLastX * cam.sens, 2 * pi);
       }
@@ -90,8 +100,8 @@ int main()
    });
 
    auto hwnd = CreateWindow("Game", "Game",
-                            //  WS_POPUP | WS_MAXIMIZE, 0, 0, 0, 0,
-                            WS_OVERLAPPEDWINDOW ^ (WS_SIZEBOX | WS_MAXIMIZEBOX), 50, 50, 1920, 1080,
+                            WS_POPUP | WS_MAXIMIZE, 0, 0, 0, 0,
+                            // WS_OVERLAPPEDWINDOW ^ (WS_SIZEBOX | WS_MAXIMIZEBOX), 50, 50, 1920, 1080,
                             null, null, null, null);
 
    RECT rect;
@@ -133,10 +143,7 @@ int main()
    auto depthWindow = createTexture({
        .Width = u32(windowSize[0]),
        .Height = u32(windowSize[1]),
-       .MipLevels = 1,
-       .ArraySize = 1,
        .Format = DXGI_FORMAT_D32_FLOAT,
-       .SampleDesc = {.Count = 1},
        .BindFlags = D3D11_BIND_DEPTH_STENCIL,
    });
 
@@ -180,15 +187,25 @@ int main()
        .DepthFunc = D3D11_COMPARISON_GREATER,
    });
 
-   LARGE_INTEGER prev;
-   LARGE_INTEGER freq;
+   auto dsLess = createDepthState({
+       .DepthEnable = true,
+       .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL,
+       .DepthFunc = D3D11_COMPARISON_LESS,
+   });
+
+   auto bsOpaque = createBlendState({.RenderTarget = {{
+                                         .BlendEnable = false,
+                                         .SrcBlend = D3D11_BLEND_ONE,
+                                         .DestBlend = D3D11_BLEND_ZERO,
+                                         .BlendOp = D3D11_BLEND_OP_ADD,
+                                         .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
+                                     }}});
+
+   LARGE_INTEGER prev, freq;
    QueryPerformanceCounter(&prev);
    QueryPerformanceFrequency(&freq);
    ShowWindow(hwnd, SW_SHOW);
    // ShowCursor(false);
-
-   WaveFrontReader<u16> reader;
-   reader.Load(L"sphere.obj");
 
    TinyGLTF loader;
    Model scene;
@@ -201,7 +218,8 @@ int main()
       ComPtr<ID3D11ShaderResourceView> uvs;
       ComPtr<ID3D11Buffer> indices;
       int count;
-   } player, enemy;
+      Texture2D diffuse;
+   } player, enemy, level;
 
    enemy.points = createShaderResourceView(createBuffer({
                                                             .ByteWidth = LEN(scene, 0, attributes["POSITION"]),
@@ -252,6 +270,16 @@ int main()
                                                               .pSysMem = DATA(scene, 1, attributes["NORMAL"]),
                                                           }));
 
+   player.uvs = createShaderResourceView(createBuffer({
+                                                          .ByteWidth = LEN(scene, 1, attributes["TEXCOORD_0"]),
+                                                          .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+                                                          .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+                                                          .StructureByteStride = sizeof(vec2),
+                                                      },
+                                                      {
+                                                          .pSysMem = DATA(scene, 1, attributes["TEXCOORD_0"]),
+                                                      }));
+
    player.indices = createBuffer({
                                      .ByteWidth = LEN(scene, 1, indices),
                                      .BindFlags = D3D11_BIND_INDEX_BUFFER,
@@ -261,12 +289,46 @@ int main()
                                  });
    player.count = COUNT(scene, 1, indices);
 
+   player.diffuse = createTexture({
+                                      .Width = u32(scene.images[1].width),
+                                      .Height = u32(scene.images[1].height),
+                                      .MipLevels = BIT_WIDTH(scene.images[1].width),
+                                      .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                                      .MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS,
+                                  },
+                                  {
+                                      .pSysMem = scene.images[1].image.data(),
+                                  });
+
+   level.points = createShaderResourceView(createBuffer({
+                                                            .ByteWidth = LEN(scene, 2, attributes["POSITION"]),
+                                                            .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+                                                            .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+                                                            .StructureByteStride = sizeof(vec3),
+                                                        },
+                                                        {
+                                                            .pSysMem = DATA(scene, 2, attributes["POSITION"]),
+                                                        }));
+
+   level.normals = createShaderResourceView(createBuffer({
+                                                             .ByteWidth = LEN(scene, 2, attributes["NORMAL"]),
+                                                             .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+                                                             .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+                                                             .StructureByteStride = sizeof(vec3),
+                                                         },
+                                                         {
+                                                             .pSysMem = DATA(scene, 2, attributes["NORMAL"]),
+                                                         }));
+
    auto vsTriangle = createVertexShader(L"out/vsTriangle.dxbc");
    auto psTriangle = createPixelShader(L"out/psTriangle.dxbc");
    auto vsMain = createVertexShader(L"out/vsMain.dxbc");
    auto psMain = createPixelShader(L"out/psMain.dxbc");
 
-   cb<mat4> model, view, proj;
+   cb<mat4> model, view, proj, cascades[4]; // cascades transform world space to shadow
+   cb<vec3> light;
+
+   light = {-sin(shadow.yaw) * cos(shadow.pitch), sin(shadow.pitch), -cos(shadow.pitch) * cos(shadow.yaw)};
 
    print("hello world");
 
@@ -285,28 +347,23 @@ int main()
 
       prev = now;
 
-      vec3 camRight = {cos(cam.yaw), 0, -sin(cam.yaw)};
-      vec3 camUp = {sin(cam.pitch) * sin(cam.yaw), cos(cam.pitch), sin(cam.pitch) * cos(cam.yaw)};
-      vec3 camForward = {sin(cam.yaw) * cos(cam.pitch), -sin(cam.pitch), cos(cam.pitch) * cos(cam.yaw)};
+      mat3 viewToWorldRotation = euler(cam.yaw, cam.pitch, 0);
 
-      if (keyDown['W']) cam.pos += camForward * cam.armLength;
-      if (keyDown['S']) cam.pos -= camForward * cam.armLength;
-      if (keyDown['A']) cam.pos -= camRight * cam.armLength;
-      if (keyDown['D']) cam.pos += camRight * cam.armLength;
+      vec3 camRight = viewToWorldRotation * vec3{1, 0, 0};
+      vec3 camUp = viewToWorldRotation * vec3{0, 1, 0};
+      vec3 camForward = viewToWorldRotation * vec3{0, 0, 1};
 
-      view = {
-          cos(cam.yaw), 0, -sin(cam.yaw), -dot(cam.pos, camRight),
-          sin(cam.pitch) * sin(cam.yaw), cos(cam.pitch), sin(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camUp),
-          sin(cam.yaw) * cos(cam.pitch), -sin(cam.pitch), cos(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camForward),
-          0, 0, 0, 1};
-      proj = {
-          1 / tan(cam.fov / 2), 0, 0, 0,
-          0, windowSize[0] / windowSize[1] / tan(cam.fov / 2), 0, 0,
-          0, 0, 0, cam.near,
-          0, 0, 1, 0};
+      if (keyDown['W'])
+         cam.pos += camForward * cam.speed * dt;
+      if (keyDown['S'])
+         cam.pos -= camForward * cam.speed * dt;
+      if (keyDown['A'])
+         cam.pos -= camRight * cam.speed * dt;
+      if (keyDown['D'])
+         cam.pos += camRight * cam.speed * dt;
 
       setPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-      clearRenderTargetView(texWindow, {0.1, 0.1, 0.1, 1});
+      clearRenderTargetView(texWindow, {0, 0, 0, 1});
       clearDepthStencilView(depthWindow, 0); // reverse depth means 0 = far plane
                                              // so error during world space -> view space -> clip space -> screen space
                                              // conversion is spread out more evenly (projection matrix defines a
@@ -314,29 +371,51 @@ int main()
       setRenderTargets({texWindow}, depthWindow);
       setViewports({{.Width = windowSize[0], .Height = windowSize[1], .MaxDepth = 1}});
       setVertexConstants(0, {model, view, proj});
+      setPixelConstants(0, {light});
       setDepthState(dsGreater);
+      setBlendState(bsOpaque);
 
+      float aspect = windowSize[0] / windowSize[1];
+
+      view =
+          //   {
+          //       cos(cam.yaw), 0, -sin(cam.yaw), -dot(cam.pos, camRight),
+          //       sin(cam.pitch) * sin(cam.yaw), cos(cam.pitch), sin(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camUp),
+          //       sin(cam.yaw) * cos(cam.pitch), -sin(cam.pitch), cos(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camForward),
+          //       0, 0, 0, 1};
+
+          affine(transpose(viewToWorldRotation), vec3{}) * affine(id<3>(), -cam.pos);
+      proj = {
+          1 / tan(cam.fov / 2), 0, 0, 0,
+          0, aspect / tan(cam.fov / 2), 0, 0,
+          0, 0, 0, cam.near,
+          0, 0, 1, 0};
       model = {
           1, 0, 0, 0,
           0, 1, 0, 0,
           0, 0, 1, 0,
           0, 0, 0, 1};
 
-      setVertexShader(vsTriangle);
-      setPixelShader(psTriangle);
-      draw(3);
+      //   range (i, 8)
+      //   {
+      //   }
 
-      //   setVertexShader(vsMain);
-      //   setPixelShader(psMain);
+      //   setVertexShader(vsTriangle);
+      //   setPixelShader(psTriangle);
+      //   draw(3);
 
-      //   setVertexResources(0, {player.points});
-      //   setIndexBuffer(player.indices);
-      //   drawIndexed(player.count);
+      setVertexShader(vsMain);
+      setPixelShader(psMain);
 
-      // spriteBatch.Begin();
-      // spriteFont.DrawString(&spriteBatch, L"Hello, world!", Vector2(100, 100));
-      // auto width = spriteFont.MeasureString(L"Hello, world!");
-      // spriteBatch.End();
+      setVertexResources(0, {player.points, player.normals, player.uvs});
+      setPixelResources(0, {player.diffuse});
+      setIndexBuffer(player.indices);
+      drawIndexed(player.count);
+
+      spriteBatch.Begin();
+      spriteFont.DrawString(&spriteBatch, L"Hello, world!", Vector2(100, 100));
+      auto width = spriteFont.MeasureString(L"Hello, world!");
+      spriteBatch.End();
 
       sc->Present(1, 0);
    }

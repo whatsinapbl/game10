@@ -53,6 +53,8 @@ using namespace tinygltf;
 #define LEN(m, index, name) u32(BUFFER_VIEW(m, index, name).byteLength)
 #define COUNT(m, index, name) ACCESSOR(m, index, name).count
 
+#define BIT_WIDTH(x) u32(bit_width(u32(x)))
+
 #define sd(...) array{__VA_ARGS__}.size(), array{__VA_ARGS__}.data()
 
 template <class T>
@@ -73,52 +75,139 @@ struct ComPtr : public Microsoft::WRL::ComPtr<T>
    operator T*() { return self.Get(); }
 };
 
-template <class T, int N>
+template <int N>
 struct vec
 {
-   T data[N];
+   float data[N];
 
-   T& operator[](int i) { return data[i]; }
-
-   friend vec operator+(vec a, vec b)
-   {
-      vec res;
-      range (i, N) res[i] = a[i] + b[i];
-
-      return res;
-   }
-
-   friend vec operator-(vec a, vec b)
-   {
-      vec res;
-      range (i, N) res[i] = a[i] - b[i];
-      return res;
-   }
-
-   friend vec operator*(vec a, T b)
-   {
-      vec res;
-      range (i, N) res[i] = a[i] * b;
-      return res;
-   }
-
-   friend T dot(vec a, vec b)
-   {
-      T res = 0;
-      range (i, N) res += a[i] * b[i];
-      return res;
-   }
+   float& operator[](int i) { return data[i]; }
 
    void operator+=(vec b) { self = self + b; }
    void operator-=(vec b) { self = self - b; }
 };
 
-using vec2 = vec<float, 2>;
-using vec3 = vec<float, 3>;
-using vec4 = vec<float, 4>;
+template <int N>
+vec<N> operator-(vec<N> a)
+{
+   vec<N> res;
+   range (i, N) res[i] = -a[i];
+   return res;
+}
 
-using mat4 = vec<float, 16>;
-using mat3x4 = vec<float, 12>;
+template <int N>
+vec<N> operator+(vec<N> a, vec<N> b)
+{
+   vec<N> res;
+   range (i, N) res[i] = a[i] + b[i];
+   return res;
+}
+
+template <int N>
+vec<N> operator-(vec<N> a, vec<N> b)
+{
+   vec<N> res;
+   range (i, N) res[i] = a[i] - b[i];
+   return res;
+}
+
+template <int N>
+vec<N> operator*(vec<N> a, float b)
+{
+   vec<N> res;
+   range (i, N) res[i] = a[i] * b;
+   return res;
+}
+
+template <int N>
+float dot(vec<N> a, vec<N> b)
+{
+   float res = 0;
+   range (i, N) res += a[i] * b[i];
+   return res;
+}
+
+template <int N>
+float length(vec<N> a)
+{
+   return sqrt(dot(a, a));
+}
+
+using vec2 = vec<2>;
+using vec3 = vec<3>;
+using vec4 = vec<4>;
+
+template <int N, int M>
+struct mat
+{
+   float data[N][M];
+
+   float& operator[](int i, int j) { return data[i][j]; }
+};
+
+using mat4 = mat<4, 4>;
+using mat3x4 = mat<3, 4>;
+using mat3 = mat<3, 3>;
+
+template <int N, int M>
+vec<N> operator*(mat<N, M> m, vec<M> v)
+{
+   vec<N> res = {};
+   range (i, N)
+      range (j, M)
+         res[i] += m[i, j] * v[j];
+   return res;
+}
+template <int N, int M, int P>
+mat<N, P> operator*(mat<N, M> a, mat<M, P> b)
+{
+   mat<N, P> res = {};
+   range (i, N)
+      range (j, P)
+         range (k, M)
+            res[i, j] += a[i, k] * b[k, j];
+   return res;
+}
+
+template <int N, int M>
+mat<M, N> transpose(mat<N, M> m)
+{
+   mat<M, N> res;
+   range (i, N)
+      range (j, M)
+         res[j, i] = m[i, j];
+   return res;
+}
+
+mat3 euler(float y, float p, float r)
+{
+   return {sin(p) * sin(r) * sin(y) + cos(r) * cos(y),
+           sin(p) * sin(y) * cos(r) - sin(r) * cos(y),
+           sin(y) * cos(p),
+           sin(r) * cos(p),
+           cos(p) * cos(r),
+           -sin(p),
+           sin(p) * sin(r) * cos(y) - sin(y) * cos(r),
+           sin(p) * cos(r) * cos(y) + sin(r) * sin(y),
+           cos(p) * cos(y)};
+}
+
+mat4 affine(mat3 m, vec3 v)
+{
+   return {m[0, 0], m[0, 1], m[0, 2], v[0],
+           m[1, 0], m[1, 1], m[1, 2], v[1],
+           m[2, 0], m[2, 1], m[2, 2], v[2],
+           0, 0, 0, 1};
+}
+
+template <int N>
+mat<N, N> id()
+{
+   mat<N, N> res;
+   range (i, N)
+      range (j, N)
+         res[i, j] = i == j ? 1 : 0;
+   return res;
+}
 
 struct Texture2D
 {
@@ -147,6 +236,7 @@ void setVertexResources(int start, vector<ID3D11ShaderResourceView*> srvs) { ctx
 void setPixelResources(int start, vector<ID3D11ShaderResourceView*> srvs) { ctx->PSSetShaderResources(start, srvs.size(), srvs.data()); }
 void setIndexBuffer(ID3D11Buffer* ib) { ctx->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0); }
 void setDepthState(ID3D11DepthStencilState* ds) { ctx->OMSetDepthStencilState(ds, 0); }
+void setBlendState(ID3D11BlendState* bs) { ctx->OMSetBlendState(bs, null, 0xffffffff); }
 void setVertexShader(ID3D11VertexShader* vs) { ctx->VSSetShader(vs, null, 0); }
 void setPixelShader(ID3D11PixelShader* ps) { ctx->PSSetShader(ps, null, 0); }
 void draw(int count) { ctx->Draw(count, 0); }
@@ -207,8 +297,28 @@ ComPtr<ID3D11Buffer> createBuffer(D3D11_BUFFER_DESC desc, D3D11_SUBRESOURCE_DATA
    return buf;
 }
 
+void* mapResource(ID3D11Resource* res)
+{
+   D3D11_MAPPED_SUBRESOURCE mapped;
+   ctx->Map(res, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+   return mapped.pData;
+}
+
+void unmapResource(ID3D11Resource* res)
+{
+   ctx->Unmap(res, 0);
+}
+
 Texture2D createTexture(D3D11_TEXTURE2D_DESC desc)
 {
+
+   if (desc.MipLevels == 0)
+      desc.MipLevels = 1;
+   if (desc.ArraySize == 0)
+      desc.ArraySize = 1;
+   if (desc.SampleDesc.Count == 0)
+      desc.SampleDesc.Count = 1;
+
    Texture2D tex;
    dev->CreateTexture2D(&desc, null, &tex.tex);
 
@@ -220,6 +330,49 @@ Texture2D createTexture(D3D11_TEXTURE2D_DESC desc)
 
    if (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE)
       tex.srv = createShaderResourceView(tex);
+   return tex;
+}
+
+int formatSize(DXGI_FORMAT format)
+{
+   switch (format)
+   {
+      case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+         return 4;
+
+      default:
+         throw;
+   }
+}
+
+Texture2D createTexture(D3D11_TEXTURE2D_DESC desc, D3D11_SUBRESOURCE_DATA data)
+{
+   if (desc.MipLevels == 0)
+      desc.MipLevels = 1;
+   if (desc.ArraySize == 0)
+      desc.ArraySize = 1;
+   if (desc.SampleDesc.Count == 0)
+      desc.SampleDesc.Count = 1;
+
+   if (desc.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
+      desc.BindFlags |= D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+   data.SysMemPitch = desc.Width * formatSize(desc.Format);
+
+   Texture2D tex;
+   dev->CreateTexture2D(&desc, vector<D3D11_SUBRESOURCE_DATA>(desc.MipLevels * desc.ArraySize, data).data(), &tex.tex);
+
+   if (desc.BindFlags & D3D11_BIND_RENDER_TARGET)
+      tex.rtv = createRenderTargetView(tex);
+
+   if (desc.BindFlags & D3D11_BIND_DEPTH_STENCIL)
+      tex.dsv = createDepthStencilView(tex);
+
+   if (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+      tex.srv = createShaderResourceView(tex);
+
+   if (desc.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
+      ctx->GenerateMips(tex);
    return tex;
 }
 
@@ -265,6 +418,13 @@ ComPtr<ID3D11RasterizerState> createRasterizerState(D3D11_RASTERIZER_DESC desc)
    ComPtr<ID3D11RasterizerState> rs;
    dev->CreateRasterizerState(&desc, &rs);
    return rs;
+}
+
+ComPtr<ID3D11BlendState> createBlendState(D3D11_BLEND_DESC desc)
+{
+   ComPtr<ID3D11BlendState> bs;
+   dev->CreateBlendState(&desc, &bs);
+   return bs;
 }
 
 template <class T>

@@ -5,7 +5,7 @@ bool dragging;
 
 struct
 {
-   vec3 pos = {0, 0, -5};
+   vec3 pos = {0, 5, -5};
    float yaw;
    float pitch;
    float armLength;
@@ -15,11 +15,12 @@ struct
    float speed = 5;
 } cam;
 
-struct
+Mesh enemy, level;
+
+struct : Mesh
 {
-   float yaw = -pi / 6;
-   float pitch = pi / 3;
-} shadow;
+   vec3 pos;
+} player;
 
 i64 callback(HWND hwnd, u32 msg, u64 wp, i64 lp)
 {
@@ -84,6 +85,7 @@ i64 callback(HWND hwnd, u32 msg, u64 wp, i64 lp)
 int main()
 {
 
+#pragma region setup
    vector<RAWINPUTDEVICE> devices = {
        {
            .usUsagePage = HID_USAGE_PAGE_GENERIC,
@@ -106,7 +108,6 @@ int main()
 
    RECT rect;
    GetClientRect(hwnd, &rect);
-   vec2 windowSize = {rect.right, rect.bottom};
 
    D3D11CreateDeviceAndSwapChain(
        null, D3D_DRIVER_TYPE_HARDWARE, null,
@@ -133,12 +134,14 @@ int main()
    info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
    info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
 #endif
+#pragma endregion
 
    Texture2D texWindow;
    sc->GetBuffer(0, IID_PPV_ARGS(&texWindow.tex));
    texWindow.rtv = createRenderTargetView(texWindow, {.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
                                                       .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D});
-   // texWindow.rtv = createRenderTargetView(texWindow);
+
+   vec2 windowSize = {rect.right, rect.bottom};
 
    auto depthWindow = createTexture({
        .Width = u32(windowSize[0]),
@@ -147,9 +150,22 @@ int main()
        .BindFlags = D3D11_BIND_DEPTH_STENCIL,
    });
 
+   //    material id so that we shade the level with ssao and the player with half lambert lighting
+   //    auto texMaterial = createTexture();
+
+   Texture2D shadowMap[4];
+   range (i, 4)
+      shadowMap[i] = createTexture({
+          .Width = 2048,
+          .Height = 2048,
+          .Format = DXGI_FORMAT_R32_TYPELESS,
+          .BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE,
+      });
+
    auto spriteBatch = SpriteBatch(ctx);
    auto spriteFont = SpriteFont(dev, L"assets/inter.spritefont");
 
+#pragma region states
    auto ssAniso = createSamplerState({
        .Filter = D3D11_FILTER_ANISOTROPIC,
        .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
@@ -180,6 +196,15 @@ int main()
        .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
        .ComparisonFunc = D3D11_COMPARISON_LESS,
    });
+   auto ssGrid = createSamplerState({
+       .Filter = D3D11_FILTER_ANISOTROPIC,
+       .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
+       .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
+       .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
+       .MaxAnisotropy = 16,
+       .MinLOD = -FLT_MAX,
+       .MaxLOD = FLT_MAX,
+   });
 
    auto dsGreater = createDepthState({
        .DepthEnable = true,
@@ -193,34 +218,26 @@ int main()
        .DepthFunc = D3D11_COMPARISON_LESS,
    });
 
-   auto bsOpaque = createBlendState({.RenderTarget = {{
-                                         .BlendEnable = false,
-                                         .SrcBlend = D3D11_BLEND_ONE,
-                                         .DestBlend = D3D11_BLEND_ZERO,
-                                         .BlendOp = D3D11_BLEND_OP_ADD,
-                                         .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
-                                     }}});
+   auto rsFill = createRasterState({
+       .FillMode = D3D11_FILL_SOLID,
+       .CullMode = D3D11_CULL_BACK,
+       .DepthClipEnable = true,
+   });
+   auto rsShadow = createRasterState({
+       .FillMode = D3D11_FILL_SOLID,
+       .CullMode = D3D11_CULL_BACK,
+       .DepthBiasClamp = 0.05,
+       .SlopeScaledDepthBias = 3,
+       // depth clip false to pancake depth
+   });
 
-   LARGE_INTEGER prev, freq;
-   QueryPerformanceCounter(&prev);
-   QueryPerformanceFrequency(&freq);
-   ShowWindow(hwnd, SW_SHOW);
-   // ShowCursor(false);
+#pragma endregion
 
-   TinyGLTF loader;
-   Model scene;
+   tinygltf::TinyGLTF loader;
+   tinygltf::Model scene;
    loader.LoadBinaryFromFile(&scene, null, null, "scene.glb");
 
-   struct
-   {
-      ComPtr<ID3D11ShaderResourceView> points;
-      ComPtr<ID3D11ShaderResourceView> normals;
-      ComPtr<ID3D11ShaderResourceView> uvs;
-      ComPtr<ID3D11Buffer> indices;
-      int count;
-      Texture2D diffuse;
-   } player, enemy, level;
-
+#pragma region enemy
    enemy.points = createShaderResourceView(createBuffer({
                                                             .ByteWidth = LEN(scene, 0, attributes["POSITION"]),
                                                             .BindFlags = D3D11_BIND_SHADER_RESOURCE,
@@ -250,6 +267,9 @@ int main()
                                 });
    enemy.count = COUNT(scene, 0, indices);
 
+#pragma endregion
+
+#pragma region player
    player.points = createShaderResourceView(createBuffer({
                                                              .ByteWidth = LEN(scene, 1, attributes["POSITION"]),
                                                              .BindFlags = D3D11_BIND_SHADER_RESOURCE,
@@ -299,7 +319,13 @@ int main()
                                   {
                                       .pSysMem = scene.images[1].image.data(),
                                   });
+   player.pos = {
+       float(scene.nodes[1].translation[0]),
+       float(scene.nodes[1].translation[1]),
+       float(scene.nodes[1].translation[2])};
+#pragma endregion
 
+#pragma region level
    level.points = createShaderResourceView(createBuffer({
                                                             .ByteWidth = LEN(scene, 2, attributes["POSITION"]),
                                                             .BindFlags = D3D11_BIND_SHADER_RESOURCE,
@@ -319,19 +345,49 @@ int main()
                                                          {
                                                              .pSysMem = DATA(scene, 2, attributes["NORMAL"]),
                                                          }));
+   level.indices = createBuffer({
+                                    .ByteWidth = LEN(scene, 2, indices),
+                                    .BindFlags = D3D11_BIND_INDEX_BUFFER,
+                                },
+                                {
+                                    .pSysMem = DATA(scene, 2, indices),
+                                });
+
+   level.count = COUNT(scene, 2, indices);
+
+   level.diffuse = createTexture({
+                                     .Width = u32(scene.images[2].width),
+                                     .Height = u32(scene.images[2].height),
+                                     .MipLevels = BIT_WIDTH(scene.images[2].width),
+                                     .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                                     .MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS,
+                                 },
+                                 {
+                                     .pSysMem = scene.images[2].image.data(),
+                                 });
+#pragma endregion
 
    auto vsTriangle = createVertexShader(L"out/vsTriangle.dxbc");
-   auto psTriangle = createPixelShader(L"out/psTriangle.dxbc");
+   auto vsShadow = createVertexShader(L"out/vsShadow.dxbc");
    auto vsMain = createVertexShader(L"out/vsMain.dxbc");
+   auto vsTriplanar = createVertexShader(L"out/vsTriplanar.dxbc");
+
+   auto psTriangle = createPixelShader(L"out/psTriangle.dxbc");
    auto psMain = createPixelShader(L"out/psMain.dxbc");
 
    cb<mat4> model, view, proj, cascades[4]; // cascades transform world space to shadow
    cb<vec3> light;
 
-   light = {-sin(shadow.yaw) * cos(shadow.pitch), sin(shadow.pitch), -cos(shadow.pitch) * cos(shadow.yaw)};
+   mat3 shadowToWorldRotation = euler(-pi / 6, pi / 3, 0);
+   light = -shadowToWorldRotation * vec3{0, 0, 1};
 
    print("hello world");
 
+   LARGE_INTEGER prev, freq;
+   QueryPerformanceCounter(&prev);
+   QueryPerformanceFrequency(&freq);
+   ShowWindow(hwnd, SW_SHOW);
+   // ShowCursor(false);
    while (true)
    {
       MSG msg;
@@ -362,55 +418,109 @@ int main()
       if (keyDown['D'])
          cam.pos += camRight * cam.speed * dt;
 
-      setPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-      clearRenderTargetView(texWindow, {0, 0, 0, 1});
-      clearDepthStencilView(depthWindow, 0); // reverse depth means 0 = far plane
-                                             // so error during world space -> view space -> clip space -> screen space
-                                             // conversion is spread out more evenly (projection matrix defines a
-                                             // function z |-> near/z)
-      setRenderTargets({texWindow}, depthWindow);
-      setViewports({{.Width = windowSize[0], .Height = windowSize[1], .MaxDepth = 1}});
-      setVertexConstants(0, {model, view, proj});
-      setPixelConstants(0, {light});
-      setDepthState(dsGreater);
-      setBlendState(bsOpaque);
-
       float aspect = windowSize[0] / windowSize[1];
-
-      view =
-          //   {
-          //       cos(cam.yaw), 0, -sin(cam.yaw), -dot(cam.pos, camRight),
-          //       sin(cam.pitch) * sin(cam.yaw), cos(cam.pitch), sin(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camUp),
-          //       sin(cam.yaw) * cos(cam.pitch), -sin(cam.pitch), cos(cam.pitch) * cos(cam.yaw), -dot(cam.pos, camForward),
-          //       0, 0, 0, 1};
-
-          affine(transpose(viewToWorldRotation), vec3{}) * affine(id<3>(), -cam.pos);
+      view = affine(transpose(viewToWorldRotation), vec3{}) * affine(id<3>(), -cam.pos);
       proj = {
           1 / tan(cam.fov / 2), 0, 0, 0,
           0, aspect / tan(cam.fov / 2), 0, 0,
           0, 0, 0, cam.near,
           0, 0, 1, 0};
-      model = {
-          1, 0, 0, 0,
-          0, 1, 0, 0,
-          0, 0, 1, 0,
-          0, 0, 0, 1};
 
-      //   range (i, 8)
-      //   {
-      //   }
+#pragma region update cascades
 
-      //   setVertexShader(vsTriangle);
-      //   setPixelShader(psTriangle);
-      //   draw(3);
+      float d[] = {cam.near, 4, 10, 20, 50};
+      range (i, 4)
+      {
+         float x1 = d[i] * tan(cam.fov / 2);
+         float y1 = x1 / aspect;
+         float x2 = d[i + 1] * tan(cam.fov / 2);
+         float y2 = x2 / aspect;
+         vec3 frustumPoints[] = {
+             {x1, -y1, d[i]},
+             {x1, y1, d[i]},
+             {-x1, y1, d[i]},
+             {-x1, -y1, d[i]},
+             {x2, -y2, d[i + 1]},
+             {x2, y2, d[i + 1]},
+             {-x2, y2, d[i + 1]},
+             {-x2, -y2, d[i + 1]},
+         };
+         float xMin, yMin, zMin, xMax, yMax, zMax;
+         xMin = yMin = zMin = FLT_MAX;
+         xMax = yMax = zMax = -FLT_MAX;
+         range (i, 8)
+         {
+            vec3 v = transpose(shadowToWorldRotation) * (viewToWorldRotation * frustumPoints[i] + cam.pos);
+            xMin = min(xMin, v[0]);
+            yMin = min(yMin, v[1]);
+            zMin = min(zMin, v[2]);
+            xMax = max(xMax, v[0]);
+            yMax = max(yMax, v[1]);
+            zMax = max(zMax, v[2]);
+         }
+         // minimize floating point error by making s an integer
+         float s = ceil(max(length(frustumPoints[0] - frustumPoints[6]), length(frustumPoints[4] - frustumPoints[6])));
+         float T = s / 2048;
 
-      setVertexShader(vsMain);
+         // divide by s/2 to keep x, y in [-1, 1]
+         // you can imagine an s x s square in world space where rasterization takes place.
+         // normally you subtract a = (xMin + xMax) / 2.
+         // instead you can keep region aligned to integer multiples of s / 2048 x s / 2048 so that it's rasterized the same way
+         // by first aligning a to a bottom-left point and then subtracting that.
+         // in effect, you are shifting the (xMax - xMin) x (yMax - yMin) rectangle to the up and right by a value in [0, s / 2048)
+         cascades[i] = affine(scale(2 / s, 2 / s, 1 / (zMax - zMin)), {0, 0, 0}) *
+                       affine(transpose(shadowToWorldRotation), {-floor((xMin + xMax) / 2 / T) * T, -floor((yMin + yMax) / 2 / T) * T, -zMin});
+         //    affine(transpose(shadowToWorldRotation), {-(xMin + xMax) / 2, -(yMin + yMax) / 2, -zMin});
+      }
+
+#pragma endregion
+
+      setPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+      setBlendState(null);
+
+      setDepthState(dsLess);
+      setRasterState(rsShadow);
+
+      setVertexShader(vsShadow);
+      setPixelShader(null);
+
+      range (i, 4)
+      {
+         setVertexConstants(0, {model, cascades[i]});
+         clearDepthStencilView(shadowMap[i], 1);
+         setRenderTargets({}, shadowMap[i]);
+         model = id<4>();
+         level.bind();
+         level.draw();
+      }
+
+      setVertexConstants(0, {model, view, proj});
+      setPixelConstants(0, {light});
+
+      clearRenderTargetView(texWindow, rgba(148, 178, 213, 1));
+      clearDepthStencilView(depthWindow, 0); // reverse depth means 0 = far plane
+                                             // so error during world space -> view space -> clip space -> screen space
+                                             // conversion is spread out more evenly (projection matrix defines a
+                                             // function z |-> near/z)
+      setRenderTargets({texWindow}, depthWindow);
+      setViewports({viewport(windowSize[0], windowSize[1])});
+
+      setDepthState(dsGreater);
+      setRasterState(rsFill);
+
+      setSamplers(0, {ssGrid});
+
+      setVertexShader(vsTriplanar);
       setPixelShader(psMain);
 
-      setVertexResources(0, {player.points, player.normals, player.uvs});
-      setPixelResources(0, {player.diffuse});
-      setIndexBuffer(player.indices);
-      drawIndexed(player.count);
+      model = id<4>();
+      level.bind();
+      level.draw();
+
+      setVertexShader(vsMain);
+      model = affine(id<3>(), player.pos);
+      player.bind();
+      player.draw();
 
       spriteBatch.Begin();
       spriteFont.DrawString(&spriteBatch, L"Hello, world!", Vector2(100, 100));

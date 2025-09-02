@@ -28,7 +28,6 @@ using namespace std;
 using namespace DX;
 using namespace DirectX;
 using namespace SimpleMath;
-using namespace tinygltf;
 
 #define null nullptr
 #define CAT(left, right) left##right
@@ -58,7 +57,10 @@ using namespace tinygltf;
 #define sd(...) array{__VA_ARGS__}.size(), array{__VA_ARGS__}.data()
 
 template <class T>
-T* operator&(T&& x) { return addressof(x); }
+T* operator&(T&& x)
+{
+   return addressof(x);
+}
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -72,7 +74,10 @@ using i64 = int64_t;
 template <class T>
 struct ComPtr : public Microsoft::WRL::ComPtr<T>
 {
-   operator T*() { return self.Get(); }
+   operator T*()
+   {
+      return self.Get();
+   }
 };
 
 template <int N>
@@ -80,17 +85,27 @@ struct vec
 {
    float data[N];
 
-   float& operator[](int i) { return data[i]; }
+   float& operator[](int i)
+   {
+      return data[i];
+   }
 
-   void operator+=(vec b) { self = self + b; }
-   void operator-=(vec b) { self = self - b; }
+   void operator+=(vec b)
+   {
+      self = self + b;
+   }
+   void operator-=(vec b)
+   {
+      self = self - b;
+   }
 };
 
 template <int N>
 vec<N> operator-(vec<N> a)
 {
    vec<N> res;
-   range (i, N) res[i] = -a[i];
+   range (i, N)
+      res[i] = -a[i];
    return res;
 }
 
@@ -98,7 +113,8 @@ template <int N>
 vec<N> operator+(vec<N> a, vec<N> b)
 {
    vec<N> res;
-   range (i, N) res[i] = a[i] + b[i];
+   range (i, N)
+      res[i] = a[i] + b[i];
    return res;
 }
 
@@ -106,7 +122,8 @@ template <int N>
 vec<N> operator-(vec<N> a, vec<N> b)
 {
    vec<N> res;
-   range (i, N) res[i] = a[i] - b[i];
+   range (i, N)
+      res[i] = a[i] - b[i];
    return res;
 }
 
@@ -114,7 +131,8 @@ template <int N>
 vec<N> operator*(vec<N> a, float b)
 {
    vec<N> res;
-   range (i, N) res[i] = a[i] * b;
+   range (i, N)
+      res[i] = a[i] * b;
    return res;
 }
 
@@ -122,7 +140,8 @@ template <int N>
 float dot(vec<N> a, vec<N> b)
 {
    float res = 0;
-   range (i, N) res += a[i] * b[i];
+   range (i, N)
+      res += a[i] * b[i];
    return res;
 }
 
@@ -141,12 +160,26 @@ struct mat
 {
    float data[N][M];
 
-   float& operator[](int i, int j) { return data[i][j]; }
+   float& operator[](int i, int j)
+   {
+      return data[i][j];
+   }
 };
 
 using mat4 = mat<4, 4>;
 using mat3x4 = mat<3, 4>;
 using mat3 = mat<3, 3>;
+
+template <int N, int M>
+mat<N, M> operator-(mat<N, M> m)
+{
+   mat<N, M> res;
+   range (i, N)
+      range (j, M)
+         res[i, j] = -m[i, j];
+
+   return res;
+}
 
 template <int N, int M>
 vec<N> operator*(mat<N, M> m, vec<M> v)
@@ -191,6 +224,13 @@ mat3 euler(float y, float p, float r)
            cos(p) * cos(y)};
 }
 
+mat3 scale(float a, float b, float c)
+{
+   return {a, 0, 0,
+           0, b, 0,
+           0, 0, c};
+}
+
 mat4 affine(mat3 m, vec3 v)
 {
    return {m[0, 0], m[0, 1], m[0, 2], v[0],
@@ -209,38 +249,156 @@ mat<N, N> id()
    return res;
 }
 
+#include "shared.h"
+
 struct Texture2D
 {
    ComPtr<ID3D11Texture2D> tex;
    ComPtr<ID3D11RenderTargetView> rtv;
    ComPtr<ID3D11DepthStencilView> dsv;
    ComPtr<ID3D11ShaderResourceView> srv;
-   operator ID3D11Texture2D*() { return tex; }
-   operator ID3D11RenderTargetView*() { return rtv; }
-   operator ID3D11DepthStencilView*() { return dsv; }
-   operator ID3D11ShaderResourceView*() { return srv; }
+   operator ID3D11Texture2D*()
+   {
+      return tex;
+   }
+   operator ID3D11RenderTargetView*()
+   {
+      return rtv;
+   }
+   operator ID3D11DepthStencilView*()
+   {
+      return dsv;
+   }
+   operator ID3D11ShaderResourceView*()
+   {
+      return srv;
+   }
 };
 
 ComPtr<ID3D11Device> dev;
 ComPtr<ID3D11DeviceContext> ctx;
 ComPtr<IDXGISwapChain> sc;
 
-void setPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY top) { ctx->IASetPrimitiveTopology(top); }
-void clearRenderTargetView(ID3D11RenderTargetView* rtv, vec4 color) { ctx->ClearRenderTargetView(rtv, color.data); }
-void clearDepthStencilView(ID3D11DepthStencilView* dsv, float depth) { ctx->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, depth, 0); }
-void setRenderTargets(vector<ID3D11RenderTargetView*> rtvs, ID3D11DepthStencilView* dsv) { ctx->OMSetRenderTargets(rtvs.size(), rtvs.data(), dsv); }
-void setViewports(vector<D3D11_VIEWPORT> vps) { ctx->RSSetViewports(vps.size(), vps.data()); }
-void setVertexConstants(int start, vector<ID3D11Buffer*> cbs) { ctx->VSSetConstantBuffers(start, cbs.size(), cbs.data()); }
-void setPixelConstants(int start, vector<ID3D11Buffer*> cbs) { ctx->PSSetConstantBuffers(start, cbs.size(), cbs.data()); }
-void setVertexResources(int start, vector<ID3D11ShaderResourceView*> srvs) { ctx->VSSetShaderResources(start, srvs.size(), srvs.data()); }
-void setPixelResources(int start, vector<ID3D11ShaderResourceView*> srvs) { ctx->PSSetShaderResources(start, srvs.size(), srvs.data()); }
-void setIndexBuffer(ID3D11Buffer* ib) { ctx->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0); }
-void setDepthState(ID3D11DepthStencilState* ds) { ctx->OMSetDepthStencilState(ds, 0); }
-void setBlendState(ID3D11BlendState* bs) { ctx->OMSetBlendState(bs, null, 0xffffffff); }
-void setVertexShader(ID3D11VertexShader* vs) { ctx->VSSetShader(vs, null, 0); }
-void setPixelShader(ID3D11PixelShader* ps) { ctx->PSSetShader(ps, null, 0); }
-void draw(int count) { ctx->Draw(count, 0); }
-void drawIndexed(int count) { ctx->DrawIndexed(count, 0, 0); }
+void setPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY top)
+{
+   ctx->IASetPrimitiveTopology(top);
+}
+
+void clearRenderTargetView(ID3D11RenderTargetView* rtv, vec4 color)
+{
+   ctx->ClearRenderTargetView(rtv, color.data);
+}
+
+void clearDepthStencilView(ID3D11DepthStencilView* dsv, float depth)
+{
+   ctx->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, depth, 0);
+}
+
+void setRenderTargets(vector<ID3D11RenderTargetView*> rtvs, ID3D11DepthStencilView* dsv)
+{
+   ctx->OMSetRenderTargets(rtvs.size(), rtvs.data(), dsv);
+}
+
+void setViewports(vector<D3D11_VIEWPORT> vps)
+{
+   ctx->RSSetViewports(vps.size(), vps.data());
+}
+
+void setVertexConstants(int start, vector<ID3D11Buffer*> cbs)
+{
+   ctx->VSSetConstantBuffers(start, cbs.size(), cbs.data());
+}
+
+void setPixelConstants(int start, vector<ID3D11Buffer*> cbs)
+{
+   ctx->PSSetConstantBuffers(start, cbs.size(), cbs.data());
+}
+
+void setVertexResources(int start, vector<ID3D11ShaderResourceView*> srvs)
+{
+   ctx->VSSetShaderResources(start, srvs.size(), srvs.data());
+}
+
+void setPixelResources(int start, vector<ID3D11ShaderResourceView*> srvs)
+{
+   ctx->PSSetShaderResources(start, srvs.size(), srvs.data());
+}
+
+void setSamplers(int start, vector<ID3D11SamplerState*> samplers)
+{
+   ctx->PSSetSamplers(start, samplers.size(), samplers.data());
+}
+
+void setIndexBuffer(ID3D11Buffer* ib)
+{
+   ctx->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
+}
+
+void setDepthState(ID3D11DepthStencilState* ds)
+{
+   ctx->OMSetDepthStencilState(ds, 0);
+}
+
+void setBlendState(ID3D11BlendState* bs)
+{
+   ctx->OMSetBlendState(bs, null, 0xffffffff);
+}
+
+void setRasterState(ID3D11RasterizerState* rs)
+{
+   ctx->RSSetState(rs);
+}
+
+void setVertexShader(ID3D11VertexShader* vs)
+{
+   ctx->VSSetShader(vs, null, 0);
+}
+
+void setPixelShader(ID3D11PixelShader* ps)
+{
+   ctx->PSSetShader(ps, null, 0);
+}
+
+void draw(int count)
+{
+   ctx->Draw(count, 0);
+}
+
+void drawIndexed(int count)
+{
+   ctx->DrawIndexed(count, 0, 0);
+}
+
+struct Mesh
+{
+   ComPtr<ID3D11ShaderResourceView> points;
+   ComPtr<ID3D11ShaderResourceView> normals;
+   ComPtr<ID3D11ShaderResourceView> uvs;
+   ComPtr<ID3D11Buffer> indices;
+   int count;
+   Texture2D diffuse;
+
+   void bind()
+   {
+      setVertexResources(0, {points, normals, uvs});
+      setPixelResources(0, {diffuse});
+      setIndexBuffer(indices);
+   }
+
+   void draw()
+   {
+      drawIndexed(count);
+   }
+};
+
+D3D11_VIEWPORT viewport(float width, float height)
+{
+   return {
+       .Width = width,
+       .Height = height,
+       .MaxDepth = 1,
+   };
+}
 
 ComPtr<ID3D11RenderTargetView> createRenderTargetView(ID3D11Texture2D* tex)
 {
@@ -326,10 +484,28 @@ Texture2D createTexture(D3D11_TEXTURE2D_DESC desc)
       tex.rtv = createRenderTargetView(tex);
 
    if (desc.BindFlags & D3D11_BIND_DEPTH_STENCIL)
-      tex.dsv = createDepthStencilView(tex);
+   {
+      if (desc.Format == DXGI_FORMAT_R32_TYPELESS)
+         tex.dsv = createDepthStencilView(tex, {
+                                                   .Format = DXGI_FORMAT_D32_FLOAT,
+                                                   .ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D,
+                                               });
+      else
+         tex.dsv = createDepthStencilView(tex);
+   }
 
    if (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      tex.srv = createShaderResourceView(tex);
+   {
+
+      if (desc.Format == DXGI_FORMAT_R32_TYPELESS)
+         tex.srv = createShaderResourceView(tex, {
+                                                     .Format = DXGI_FORMAT_R32_FLOAT,
+                                                     .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
+                                                     .Texture2D = {.MipLevels = desc.MipLevels},
+                                                 });
+      else
+         tex.srv = createShaderResourceView(tex);
+   }
    return tex;
 }
 
@@ -357,7 +533,8 @@ Texture2D createTexture(D3D11_TEXTURE2D_DESC desc, D3D11_SUBRESOURCE_DATA data)
    if (desc.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
       desc.BindFlags |= D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-   data.SysMemPitch = desc.Width * formatSize(desc.Format);
+   if (desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+      data.SysMemPitch = desc.Width * 4;
 
    Texture2D tex;
    dev->CreateTexture2D(&desc, vector<D3D11_SUBRESOURCE_DATA>(desc.MipLevels * desc.ArraySize, data).data(), &tex.tex);
@@ -413,7 +590,7 @@ ComPtr<ID3D11DepthStencilState> createDepthState(D3D11_DEPTH_STENCIL_DESC desc)
    return ds;
 }
 
-ComPtr<ID3D11RasterizerState> createRasterizerState(D3D11_RASTERIZER_DESC desc)
+ComPtr<ID3D11RasterizerState> createRasterState(D3D11_RASTERIZER_DESC desc)
 {
    ComPtr<ID3D11RasterizerState> rs;
    dev->CreateRasterizerState(&desc, &rs);
@@ -432,7 +609,10 @@ struct cb
 {
    ComPtr<ID3D11Buffer> buf;
 
-   operator ID3D11Buffer*() { return buf; }
+   operator ID3D11Buffer*()
+   {
+      return buf;
+   }
 
    cb()
    {

@@ -5,14 +5,28 @@ typedef float2x2 mat2;
 typedef float3x3 mat3;
 typedef float4x4 mat4;
 
+#include "shared.h"
+
 #define cb ConstantBuffer
 #define sb StructuredBuffer
 #define pi 3.14159265359
 
-vec4 operator*(mat4 m, vec4 v) { return mul(m, v); }
-mat4 operator*(mat4 a, mat4 b) { return mul(a, b); }
-vec3 operator*(mat3 m, vec3 v) { return mul(m, v); }
-mat3 operator*(mat3 a, mat3 b) { return mul(a, b); }
+vec4 operator*(mat4 m, vec4 v)
+{
+   return mul(m, v);
+}
+mat4 operator*(mat4 a, mat4 b)
+{
+   return mul(a, b);
+}
+vec3 operator*(mat3 m, vec3 v)
+{
+   return mul(m, v);
+}
+mat3 operator*(mat3 a, mat3 b)
+{
+   return mul(a, b);
+}
 
 void vsTriangle(uint id: SV_VertexID,
                 cb<mat4> model,
@@ -78,44 +92,70 @@ void vsMain(uint id: SV_VertexID,
             cb<mat4> proj,
             out vec4 svp: SV_Position,
             out vec3 normal: normal,
-            out vec2 uv: uv)
+            out vec2 uv: uv,
+            out vec3 pos: pos)
 {
    svp = proj * view * model * vec4(points[id], 1);
    normal = inverse(transpose(mat3(model))) * normals[id];
    uv = uvs[id];
+   pos = (model * vec4(points[id], 1)).xyz;
 }
 
-float linearize(float x)
+void vsTriplanar(uint id: SV_VertexID,
+                 sb<vec3> points,
+                 sb<vec3> normals,
+                 cb<mat4> model,
+                 cb<mat4> view,
+                 cb<mat4> proj,
+                 out vec4 svp: SV_Position,
+                 out vec3 normal: normal,
+                 out vec2 uv: uv,
+                 out vec3 pos: pos)
 {
-   if (x <= 0.04045f)
-      return x / 12.92f;
+
+   svp = proj * view * model * vec4(points[id], 1);
+   normal = inverse(transpose(mat3(model))) * normals[id];
+
+   vec3 p = points[id];
+   vec3 n = normals[id];
+   if (abs(n.x) > abs(n.y) && abs(n.x) > abs(n.z))
+      uv = vec2(p.y, p.z);
+   else if (abs(n.y) > abs(n.x) && abs(n.y) > abs(n.z))
+      uv = vec2(p.x, p.z);
    else
-      return pow((x + 0.055f) / 1.055f, 2.4f);
-}
-
-vec3 linearize(vec3 x)
-{
-   vec3 res = { linearize(x[0]), linearize(x[1]), linearize(x[2]) };
-   return res;
-}
-
-vec3 rgba(float r, float g, float b, float a)
-{
-   vec3 res = { r / 255, g / 255, b / 255 };
-   return linearize(res);
+      uv = vec2(p.x, p.y);
+   pos = (model * vec4(points[id], 1)).xyz;
 }
 
 void psMain(vec4 svp: SV_Position,
             vec3 normal: normal,
             vec2 uv: uv,
-            Texture2D<vec3> diffuse,
+            Texture2D diffuse,
             SamplerState sampler,
             cb<vec3> light,
-            out vec3 target: SV_Target)
+            out vec4 target: SV_Target)
 {
    normal = normalize(normal);
    float threshold = 0.25;
-   // vec3 light = normalize(vec3(1, 1, 1));
    float lambert = (1 - threshold) * ((dot(normal, light) + 1) / 2) + threshold;
    target = lambert * diffuse.Sample(sampler, uv);
 }
+
+// recall that svp.z is the depth value but not clamped to the viewport (that's not important though since we have depthclipenable on)
+// use this to reconstruct world position
+void psShadow(vec4 svp: SV_Position,
+              vec3 normal: normal,
+              vec2 uv: uv,
+              Texture2D diffuse,
+              Texture2D<float> shadow[4],
+              SamplerState sampler,
+              SamplerComparisonState cmp,
+              cb<vec3> light,
+              out vec4 target: SV_Target)
+{
+   normal = normalize(normal);
+   float threshold = 0.25;
+   float lambert = (1 - threshold) * ((dot(normal, light) + 1) / 2) + threshold;
+   target = lambert * diffuse.Sample(sampler, uv);
+}
+

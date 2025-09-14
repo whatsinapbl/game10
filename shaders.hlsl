@@ -29,11 +29,8 @@ mat3 operator*(mat3 a, mat3 b)
 }
 
 void vsTriangle(uint id: SV_VertexID,
-                cb<mat4> model,
-                cb<mat4> view,
-                cb<mat4> proj,
-                out vec4 svp: SV_Position,
-                out vec3 color: color)
+                cb<mat4> model, cb<mat4> view, cb<mat4> proj,
+                out vec4 svp: SV_Position, out vec3 color: color)
 {
    vec2 points[] = {
       { 0, 0.5 },
@@ -58,8 +55,7 @@ void psTriangle(vec4 svp: SV_Position,
 
 void vsShadow(uint id: SV_VertexID,
               sb<vec3> points,
-              cb<mat4> model,
-              cb<mat4> cascade,
+              cb<mat4> model, cb<mat4> cascade,
               out vec4 svp: SV_Position)
 {
    svp = cascade * model * vec4(points[id], 1);
@@ -84,37 +80,24 @@ mat3 inverse(mat3 m)
 }
 
 void vsMain(uint id: SV_VertexID,
-            sb<vec3> points,
-            sb<vec3> normals,
-            sb<vec2> uvs,
-            cb<mat4> model,
-            cb<mat4> view,
-            cb<mat4> proj,
-            out vec4 svp: SV_Position,
-            out vec3 normal: normal,
-            out vec2 uv: uv,
-            out vec3 pos: pos)
+            sb<vec3> points, sb<vec3> normals, sb<vec2> uvs,
+            cb<mat4> model, cb<mat4> view, cb<mat4> proj,
+            out vec4 svp: SV_Position, out vec3 normal: normal, out vec2 uv: uv, out vec3 pos: pos)
 {
    svp = proj * view * model * vec4(points[id], 1);
-   normal = inverse(transpose(mat3(model))) * normals[id];
+   normal = normalize(inverse(transpose(mat3(model))) * normals[id]);
    uv = uvs[id];
    pos = (model * vec4(points[id], 1)).xyz;
 }
 
 void vsTriplanar(uint id: SV_VertexID,
-                 sb<vec3> points,
-                 sb<vec3> normals,
-                 cb<mat4> model,
-                 cb<mat4> view,
-                 cb<mat4> proj,
-                 out vec4 svp: SV_Position,
-                 out vec3 normal: normal,
-                 out vec2 uv: uv,
-                 out vec3 pos: pos)
+                 sb<vec3> points, sb<vec3> normals,
+                 cb<mat4> model, cb<mat4> view, cb<mat4> proj,
+                 out vec4 svp: SV_Position, out vec3 normal: normal, out vec2 uv: uv, out vec3 pos: pos)
 {
 
    svp = proj * view * model * vec4(points[id], 1);
-   normal = inverse(transpose(mat3(model))) * normals[id];
+   normal = normalize(inverse(transpose(mat3(model))) * normals[id]);
 
    vec3 p = points[id];
    vec3 n = normals[id];
@@ -127,11 +110,8 @@ void vsTriplanar(uint id: SV_VertexID,
    pos = (model * vec4(points[id], 1)).xyz;
 }
 
-void psMain(vec4 svp: SV_Position,
-            vec3 normal: normal,
-            vec2 uv: uv,
-            Texture2D diffuse,
-            SamplerState sampler,
+void psMain(vec4 svp: SV_Position, vec3 normal: normal, vec2 uv: uv,
+            Texture2D diffuse, SamplerState sampler,
             cb<vec3> light,
             out vec4 target: SV_Target)
 {
@@ -141,21 +121,56 @@ void psMain(vec4 svp: SV_Position,
    target = lambert * diffuse.Sample(sampler, uv);
 }
 
+// uv space: (0, 0) is the top left, (0, 1) is bottom left, (1, 0) is top right, (1, 1) is bottom right
+// https://learn.microsoft.com/en-us/windows/win32/direct3d9/texture-coordinates
+vec2 ndc2uv(vec2 ndc)
+{
+   ndc = (ndc + 1) / 2;
+   ndc.y = 1 - ndc.y;
+   return ndc;
+}
+bool inVolume(vec3 ndc)
+{
+   return abs(ndc.x) < 1 && abs(ndc.y) < 1 && ndc.z > 0 && ndc.z < 1;
+}
+
 // recall that svp.z is the depth value but not clamped to the viewport (that's not important though since we have depthclipenable on)
 // use this to reconstruct world position
-void psShadow(vec4 svp: SV_Position,
-              vec3 normal: normal,
-              vec2 uv: uv,
-              Texture2D diffuse,
-              Texture2D<float> shadow[4],
-              SamplerState sampler,
-              SamplerComparisonState cmp,
-              cb<vec3> light,
+void psShadow(vec4 svp: SV_Position, vec3 normal: normal, vec2 uv: uv, vec3 pos: pos,
+              Texture2D diffuse, Texture2D<float> shadow[4],
+              SamplerState sampler, SamplerComparisonState cmp,
+              cb<vec3> light, cb<mat4> cascade0, cb<mat4> cascade1, cb<mat4> cascade2, cb<mat4> cascade3,
               out vec4 target: SV_Target)
 {
    normal = normalize(normal);
    float threshold = 0.25;
    float lambert = (1 - threshold) * ((dot(normal, light) + 1) / 2) + threshold;
-   target = lambert * diffuse.Sample(sampler, uv);
+
+   float inLight = 1;
+   if (dot(normal, light) > 0)
+   {
+      vec3 ndc = (cascade0 * vec4(pos, 1)).xyz;
+      if (inVolume(ndc))
+         inLight = shadow[0].SampleCmp(cmp, ndc2uv(ndc.xy), ndc.z);
+      else
+      {
+         vec3 ndc = (cascade1 * vec4(pos, 1)).xyz;
+         if (inVolume(ndc))
+            inLight = shadow[1].SampleCmp(cmp, ndc2uv(ndc.xy), ndc.z);
+         else
+         {
+            vec3 ndc = (cascade2 * vec4(pos, 1)).xyz;
+            if (inVolume(ndc))
+               inLight = shadow[2].SampleCmp(cmp, ndc2uv(ndc.xy), ndc.z);
+            else
+            {
+               vec3 ndc = (cascade3 * vec4(pos, 1)).xyz;
+               if (inVolume(ndc))
+                  inLight = shadow[3].SampleCmp(cmp, ndc2uv(ndc.xy), ndc.z);
+            }
+         }
+      }
+   }
+   target = lambert * lerp(0.65, 1, inLight) * diffuse.Sample(sampler, uv);
 }
 

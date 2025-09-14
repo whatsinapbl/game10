@@ -26,6 +26,7 @@ string(REGEX MATCHALL "[vp]s[a-zA-Z]+" matches ${shaders})
 foreach(match ${matches})
    string(SUBSTRING ${match} 0 2 stage)
    add_custom_command(TARGET game POST_BUILD
+      COMMAND ${slang} -matrix-layout-row-major -profile ${stage}_5_0 shaders.hlsl -entry ${match} -o out/${match}.hlsl
       COMMAND ${slang} -matrix-layout-row-major -profile ${stage}_5_0 shaders.hlsl -entry ${match} -o out/${match}.dxbc 
       COMMAND ${slang} -matrix-layout-row-major -profile ${stage}_5_0 shaders.hlsl -entry ${match} -o out/${match}.dxbc-asm
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -36,7 +37,7 @@ set(spritefont ${DirectXTK_SOURCE_DIR}/MakeSpriteFont/bin/Debug/MakeSpriteFont.e
 add_custom_command(TARGET game POST_BUILD
    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE_DIR:game>/game.exe ${CMAKE_SOURCE_DIR}
    COMMAND msbuild ${DirectXTK_SOURCE_DIR}/MakeSpriteFont/MakeSpriteFont.csproj
-   COMMAND ${spritefont} Inter assets/inter.spritefont
-   COMMAND ${spritefont} "Fira Code" assets/fira.spritefont
+   COMMAND ${spritefont} Inter inter.spritefont
+   COMMAND ${spritefont} "Fira Code" fira.spritefont
    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )

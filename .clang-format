@@ -4,6 +4,6 @@ BreakBeforeBraces: Allman
 ColumnLimit: 0
 PointerAlignment: Left
 AllowShortFunctionsOnASingleLine: false
-# AllowShortLoopsOnASingleLine: true
-# AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: true
 ForEachMacros: [range, irange]

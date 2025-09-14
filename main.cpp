@@ -1,14 +1,13 @@
 #include "header.h"
 
 bool keyDown[256];
-bool dragging;
 
 struct
 {
    vec3 pos = {0, 5, -5};
    float yaw;
    float pitch;
-   float armLength;
+   float armLength = 8;
    float fov = 103 * pi / 180;
    float near = 0.1;
    float sens = 0.003;
@@ -17,15 +16,32 @@ struct
 
 Mesh enemy, level;
 
-struct : Mesh
+struct Player : Mesh
 {
-   vec3 pos;
+   vec3 curPos, prevPos, curVel;
+   float yaw;
+   enum
+   {
+      Ground,
+      Air
+   } state = Air;
+   float innerRadius = 0.45;
+   float outerRadius = 0.5;
 } player;
+
+struct
+{
+   float rate = 64;
+   float elapsed;
+} physics;
 
 i64 callback(HWND hwnd, u32 msg, u64 wp, i64 lp)
 {
    switch (msg)
    {
+      case WM_MOUSEWHEEL:
+         cam.speed *= pow(2, float(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA);
+         break;
       case WM_KEYDOWN:
          if (!(lp >> 30 & 1)) // not repeated
          {
@@ -133,6 +149,7 @@ int main()
    dev.As(&info);
    info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
    info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+//    info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, true);
 #endif
 #pragma endregion
 
@@ -163,10 +180,10 @@ int main()
       });
 
    auto spriteBatch = SpriteBatch(ctx);
-   auto spriteFont = SpriteFont(dev, L"assets/inter.spritefont");
+   auto spriteFont = SpriteFont(dev, L"inter.spritefont");
 
 #pragma region states
-   auto ssAniso = createSamplerState({
+   auto ssGrid = createSamplerState({
        .Filter = D3D11_FILTER_ANISOTROPIC,
        .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
        .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
@@ -195,15 +212,7 @@ int main()
        .AddressV = D3D11_TEXTURE_ADDRESS_CLAMP,
        .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
        .ComparisonFunc = D3D11_COMPARISON_LESS,
-   });
-   auto ssGrid = createSamplerState({
-       .Filter = D3D11_FILTER_ANISOTROPIC,
-       .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
-       .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
-       .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
-       .MaxAnisotropy = 16,
-       .MinLOD = -FLT_MAX,
-       .MaxLOD = FLT_MAX,
+       // minlod = maxlod = 0 (no mips)
    });
 
    auto dsGreater = createDepthState({
@@ -319,10 +328,6 @@ int main()
                                   {
                                       .pSysMem = scene.images[1].image.data(),
                                   });
-   player.pos = {
-       float(scene.nodes[1].translation[0]),
-       float(scene.nodes[1].translation[1]),
-       float(scene.nodes[1].translation[2])};
 #pragma endregion
 
 #pragma region level
@@ -367,6 +372,9 @@ int main()
                                  });
 #pragma endregion
 
+   player.curPos = {float(scene.nodes[1].translation[0]), float(scene.nodes[1].translation[1]), float(scene.nodes[1].translation[2])};
+   player.prevPos = player.curPos;
+
    auto vsTriangle = createVertexShader(L"out/vsTriangle.dxbc");
    auto vsShadow = createVertexShader(L"out/vsShadow.dxbc");
    auto vsMain = createVertexShader(L"out/vsMain.dxbc");
@@ -374,6 +382,7 @@ int main()
 
    auto psTriangle = createPixelShader(L"out/psTriangle.dxbc");
    auto psMain = createPixelShader(L"out/psMain.dxbc");
+   auto psShadow = createPixelShader(L"out/psShadow.dxbc");
 
    cb<mat4> model, view, proj, cascades[4]; // cascades transform world space to shadow
    cb<vec3> light;
@@ -400,8 +409,164 @@ int main()
       LARGE_INTEGER now;
       QueryPerformanceCounter(&now);
       float dt = float(now.QuadPart - prev.QuadPart) / freq.QuadPart;
-
       prev = now;
+      physics.elapsed += dt;
+      while (physics.elapsed > 1 / physics.rate)
+      {
+         physics.elapsed -= 1 / physics.rate;
+         player.prevPos = player.curPos;
+
+         mat3 playerToWorldRotation = euler(player.yaw, 0, 0);
+
+         vec3 playerRight = playerToWorldRotation * vec3{1, 0, 0};
+         vec3 playerUp = playerToWorldRotation * vec3{0, 1, 0};
+         vec3 playerForward = playerToWorldRotation * vec3{0, 0, 1};
+
+         vec3 dir = {0, 0, 0};
+         if (keyDown['W']) dir += playerForward; // depends on camera orientation
+         if (keyDown['S']) dir -= playerForward;
+         if (keyDown['D']) dir += playerRight;
+         if (keyDown['A']) dir -= playerRight;
+         if (keyDown['E']) dir += playerUp;
+         if (keyDown['Q']) dir -= playerUp;
+         if (!eq(dir, {0, 0, 0}))
+            dir = normalize(dir);
+
+         player.curVel = dir * 8;
+
+         // start collision routine
+         // https://www.peroxide.dk/papers/collision/collision.pdf
+         // find the smallest t such that t*v is inside the triangle's "distance field"
+
+         vec3 distance = player.curVel / physics.rate;
+
+         int maxIterations = 6; // set this to max number of faces that can meet at a vertex (in theory, that's how many iterations are necessary, assuming the player doesn't move too quickly)
+         int count = 0;
+
+         while (!eq(distance, {0, 0, 0}) && count < maxIterations)
+         {
+            // test collisions against the inner ball. if we collide, then we resolve collision on the outer ball
+            // this is to solve the fundamental problem with point-volume testing: it's ill conditioned on the boundary
+            bool collided = false;
+            float t = 1;
+            vec3 normal;
+
+            range (i, COUNT(scene, 2, indices) / 3)
+            {
+               vec3 p = ((vec3*)DATA(scene, 2, attributes["POSITION"]))[((u16*)DATA(scene, 2, indices))[3 * i]] - player.curPos;
+               vec3 q = ((vec3*)DATA(scene, 2, attributes["POSITION"]))[((u16*)DATA(scene, 2, indices))[3 * i + 1]] - player.curPos;
+               vec3 r = ((vec3*)DATA(scene, 2, attributes["POSITION"]))[((u16*)DATA(scene, 2, indices))[3 * i + 2]] - player.curPos;
+
+               vec3 n = normalize(cross(q - p, r - p));                        // the plane is given by the equation dot(n, x) = dot(n, p)
+               float t1 = (dot(n, p) - player.innerRadius) / dot(n, distance); // solve dot(t*v, n) = dot(n, p) - innerRadius.
+               float t2 = (dot(n, p) + player.innerRadius) / dot(n, distance);
+
+               auto handleCollision = [&](float time, vec3 pointOnPlane)
+               {
+                  vec2 c = leftInverse(columns(q - p, r - p)) * (pointOnPlane - p);
+                  if (c[0] > 0 && c[0] < 1 && c[1] > 0 && c[1] < 1 && c[0] + c[1] < 1)
+                  {
+                     collided = true;
+                     t = time;
+                     normal = n;
+                  }
+               };
+
+               // wlog you can draw the normal upwards. mind the signs to compute the point on the original plane
+               if (t1 > 0 && t1 < t)
+                  handleCollision(t1, t1 * distance + n * player.innerRadius);
+               if (t2 > 0 && t2 < t)
+                  handleCollision(t2, t2 * distance - n * player.innerRadius);
+
+               auto handleCylinder = [&](vec3 p, vec3 q) { // infinite cylinder from p to q
+                  float len = length(q - p);
+                  vec3 a = (q - p) / len;
+
+                  // solve t*v on the infinite cylinder
+                  auto pCrossA{cross(p, a)};
+                  auto vCrossA{cross(distance, a)};
+                  auto numeratorPart{dot(vCrossA, pCrossA)};
+                  auto discriminant{dot(vCrossA, vCrossA) * square(player.innerRadius) - square(dot(p, vCrossA))};
+                  auto denom{dot(vCrossA, vCrossA)};
+
+                  auto t1{(numeratorPart + sqrt(discriminant)) / denom};
+                  auto t2{(numeratorPart - sqrt(discriminant)) / denom};
+
+                  auto handleCollision = [&](float time)
+                  {
+                     auto pos{distance * time};
+                     auto signedDistance{dot(a, pos - p)};
+                     if (signedDistance > 0 && signedDistance < len)
+                     {
+                        collided = true;
+                        t = time;
+                        normal = normalize(pos - (p + a * signedDistance));
+                     }
+                  };
+
+                  // any NAN/INF would be ignored
+                  if (t1 > 0 && t1 < t)
+                     handleCollision(t1);
+                  if (t2 > 0 && t2 < t)
+                     handleCollision(t2);
+               };
+               handleCylinder(p, q);
+               handleCylinder(q, r);
+               handleCylinder(r, p);
+
+               auto handleSphere = [&](vec3 p)
+               {
+                  auto vDotV{dot(distance, distance)};
+                  auto pDotP{dot(p, p)};
+                  auto vDotP{dot(distance, p)};
+
+                  auto numeratorPart{vDotP};
+                  auto discriminant{square(vDotP) - vDotV * (pDotP - square(player.innerRadius))};
+                  auto denom{vDotV};
+
+                  auto t1{(numeratorPart + sqrt(discriminant)) / denom};
+                  auto t2{(numeratorPart - sqrt(discriminant)) / denom};
+
+                  auto handleCollision = [&](float time)
+                  {
+                     auto pos{distance * t};
+                     collided = true;
+                     t = time;
+                     normal = normalize(pos - p);
+                  };
+                  if (t1 > 0 && t1 < t)
+                     handleCollision(t1);
+                  if (t2 > 0 && t2 < t)
+                     handleCollision(t2);
+               };
+
+               handleSphere(p);
+               handleSphere(q);
+               handleSphere(r);
+            }
+            if (collided)
+            {
+               // if collided, push the outer radius out of the collision to resolve the previous penetration
+
+               player.curPos += t * distance;
+               // note: we use the approximation sin(x) = x. technically you're supposed to move so that
+               // the outer radius ball is tangent to the plane.
+               player.curPos -= normalize(distance) * (player.outerRadius - player.innerRadius);
+
+               distance = (1 - t) * distance;
+               distance -= dot(distance, normal) * normal; // find component orthogonal to the normal
+            }
+            else
+            {
+               player.curPos += distance;
+               distance = {0, 0, 0};
+            }
+            count++;
+         }
+      }
+
+      vec3 playerPos = lerp(player.prevPos, player.curPos, physics.elapsed * physics.rate);
+      player.yaw = cam.yaw;
 
       mat3 viewToWorldRotation = euler(cam.yaw, cam.pitch, 0);
 
@@ -409,14 +574,12 @@ int main()
       vec3 camUp = viewToWorldRotation * vec3{0, 1, 0};
       vec3 camForward = viewToWorldRotation * vec3{0, 0, 1};
 
-      if (keyDown['W'])
-         cam.pos += camForward * cam.speed * dt;
-      if (keyDown['S'])
-         cam.pos -= camForward * cam.speed * dt;
-      if (keyDown['A'])
-         cam.pos -= camRight * cam.speed * dt;
-      if (keyDown['D'])
-         cam.pos += camRight * cam.speed * dt;
+      cam.pos = playerPos - camForward * cam.armLength;
+
+      // if (keyDown['W']) cam.pos += camForward * cam.speed * dt;
+      // if (keyDown['S']) cam.pos -= camForward * cam.speed * dt;
+      // if (keyDown['A']) cam.pos -= camRight * cam.speed * dt;
+      // if (keyDown['D']) cam.pos += camRight * cam.speed * dt;
 
       float aspect = windowSize[0] / windowSize[1];
       view = affine(transpose(viewToWorldRotation), vec3{}) * affine(id<3>(), -cam.pos);
@@ -483,6 +646,7 @@ int main()
 
       setVertexShader(vsShadow);
       setPixelShader(null);
+      setViewports({viewport(2048, 2048)});
 
       range (i, 4)
       {
@@ -492,38 +656,43 @@ int main()
          model = id<4>();
          level.bind();
          level.draw();
+         model = affine(euler(player.yaw, 0, 0), playerPos);
+         player.bind();
+         player.draw();
       }
 
       setVertexConstants(0, {model, view, proj});
-      setPixelConstants(0, {light});
+      setPixelConstants(0, {light, cascades[0], cascades[1], cascades[2], cascades[3]});
 
-      clearRenderTargetView(texWindow, rgba(148, 178, 213, 1));
+      clearRenderTargetView(texWindow, rgba(139, 162, 191, 1));
       clearDepthStencilView(depthWindow, 0); // reverse depth means 0 = far plane
                                              // so error during world space -> view space -> clip space -> screen space
                                              // conversion is spread out more evenly (projection matrix defines a
                                              // function z |-> near/z)
       setRenderTargets({texWindow}, depthWindow);
       setViewports({viewport(windowSize[0], windowSize[1])});
-
       setDepthState(dsGreater);
       setRasterState(rsFill);
 
-      setSamplers(0, {ssGrid});
-
       setVertexShader(vsTriplanar);
-      setPixelShader(psMain);
+      setPixelShader(psShadow);
+      setPixelResources(1, {shadowMap[0], shadowMap[1], shadowMap[2], shadowMap[3]});
+      setSamplers(0, {ssGrid, ssCmp});
 
       model = id<4>();
       level.bind();
       level.draw();
 
       setVertexShader(vsMain);
-      model = affine(id<3>(), player.pos);
+      setPixelShader(psMain);
+      model = affine(euler(player.yaw, 0, 0), playerPos);
       player.bind();
       player.draw();
 
+      setPixelResources(1, {null, null, null, null});
+
       spriteBatch.Begin();
-      spriteFont.DrawString(&spriteBatch, L"Hello, world!", Vector2(100, 100));
+      spriteFont.DrawString(&spriteBatch, player.state == Player::Ground ? L"Ground" : L"Air", Vector2(100, 100));
       auto width = spriteFont.MeasureString(L"Hello, world!");
       spriteBatch.End();
 

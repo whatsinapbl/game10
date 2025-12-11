@@ -15,8 +15,8 @@ fetch(tinygltf GIT_REPOSITORY https://github.com/syoyo/tinygltf.git GIT_TAG 3725
 add_compile_options(/std:c++latest /Zc:preprocessor /wd4244 /wd4267 /wd4305 /wd4018 /wd4838)
 link_libraries(d3d11 d3dcompiler DirectXTK Utilities tinygltf)
 
-add_executable(game main.cpp)
-# add_executable(game WIN32 main.cpp)
+# add_executable(game main.cpp)
+add_executable(game WIN32 main.cpp)
 
 set(slang ${slang_SOURCE_DIR}/bin/slangc.exe)
 file(READ shaders.hlsl shaders)
